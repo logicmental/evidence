@@ -1,0 +1,4 @@
+/build/
+/dist/payload/
+app/**/bin/
+app/**/obj/
