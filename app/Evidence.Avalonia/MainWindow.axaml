@@ -41,6 +41,7 @@
                 <Button x:Name="AttachButton" Content="Attach file" />
                 <Button x:Name="TemplatesButton" Content="Templates" />
                 <Button x:Name="EncryptButton" Content="Encrypt note" />
+                <Button x:Name="ProtectFolderButton" Content="Protect folder" />
                 <Button x:Name="LinkButton" Content="Link note" />
                 <Button x:Name="GraphButton" Content="Graph" />
                 <Button x:Name="ExportButton" Content="Export" />
@@ -123,7 +124,8 @@
                                 <Button x:Name="RedoButton" Content="Redo" ToolTip.Tip="Redo" Padding="8,4" />
                             </StackPanel>
                             <TextBox x:Name="Editor" Grid.Row="2" AcceptsReturn="True" AcceptsTab="True"
-                                     TextWrapping="Wrap" FontFamily="monospace" FontSize="14"
+                                     TextWrapping="Wrap" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     FontFamily="monospace" FontSize="14"
                                      PlaceholderText="Start writing in Markdown..."
                                      BorderThickness="0" CornerRadius="0" Padding="18"
                                      />

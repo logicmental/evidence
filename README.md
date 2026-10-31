@@ -11,9 +11,7 @@ dotnet restore app/Evidence.Avalonia/Evidence.csproj
 dotnet run --project app/Evidence.Avalonia/Evidence.csproj
 ```
 
-The Avalonia version currently supports Markdown note creation, editing, search, rename, moving notes to the trash, restore/permanent deletion, and switching vault folders. It reads the initial language selected by the Windows installer and remembers the language and vault path for the current user.
-
-The Avalonia migration is in progress. Features still available only in the legacy Qt app include encrypted notes, tags, attachments and PDF indexing, templates, wiki links and backlinks, graph view, and document export.
+The Avalonia version supports Markdown note creation and editing, nested categories, search, tags, attachments, templates, wiki links and backlinks, graph view, encrypted notes and password-protected categories, trash and restore, and export to common document formats. It reads the initial language selected by the Windows installer and remembers the language and vault path for the current user. The default notes vault is the `Notes` folder beside the application; categories are subfolders inside the vault.
 
 ## Windows installer
 

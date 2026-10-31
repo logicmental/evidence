@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using UglyToad.PdfPig;
@@ -18,9 +19,11 @@ internal sealed class VaultService
         Directory.CreateDirectory(_root);
         Directory.CreateDirectory(Path.Combine(_root, ".evidence"));
         Tags = LoadMetadata();
+        FolderProtections = LoadFolderProtections();
     }
 
     public Dictionary<string, List<string>> Tags { get; }
+    private Dictionary<string, FolderProtection> FolderProtections { get; }
     public string Root => _root;
 
     public IReadOnlyList<NoteItem> GetItems(string query, string folder,
@@ -57,6 +60,47 @@ internal sealed class VaultService
         return items.OrderBy(item => item.IsAttachment).ThenBy(item => item.Title,
             StringComparer.CurrentCultureIgnoreCase).ToArray();
     }
+
+    public string? FindProtectedFolder(string relativePath)
+    {
+        var path = relativePath.Replace('\\', '/').Trim('/');
+        return FolderProtections.Keys
+            .Where(folder => path.Equals(folder, StringComparison.OrdinalIgnoreCase) ||
+                             path.StartsWith(folder + "/", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(folder => folder.Length)
+            .FirstOrDefault();
+    }
+
+    public void SetFolderPassword(string relativePath, string password)
+    {
+        var folder = relativePath.Replace('\\', '/').Trim('/');
+        var salt = RandomNumberGenerator.GetBytes(16);
+        var hash = Rfc2898DeriveBytes.Pbkdf2(password, salt, 310_000, HashAlgorithmName.SHA256, 32);
+        FolderProtections[folder] = new FolderProtection(Convert.ToBase64String(salt),
+            Convert.ToBase64String(hash));
+        SaveFolderProtections();
+    }
+
+    public bool VerifyFolderPassword(string relativePath, string password)
+    {
+        var folder = relativePath.Replace('\\', '/').Trim('/');
+        if (!FolderProtections.TryGetValue(folder, out var protection))
+            return false;
+        try
+        {
+            var salt = Convert.FromBase64String(protection.Salt);
+            var expected = Convert.FromBase64String(protection.PasswordHash);
+            var actual = Rfc2898DeriveBytes.Pbkdf2(password, salt, 310_000,
+                HashAlgorithmName.SHA256, expected.Length);
+            return CryptographicOperations.FixedTimeEquals(actual, expected);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
+    public bool IsFolderProtected(string relativePath) => FindProtectedFolder(relativePath) is not null;
 
     public IReadOnlyList<string> GetFolders()
     {
@@ -219,6 +263,38 @@ internal sealed class VaultService
             return new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         }
     }
+
+    private Dictionary<string, FolderProtection> LoadFolderProtections()
+    {
+        var path = Path.Combine(_root, ".evidence", "folders.json");
+        if (!File.Exists(path))
+            return new Dictionary<string, FolderProtection>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var loaded = JsonSerializer.Deserialize<Dictionary<string, FolderProtection>>(
+                File.ReadAllText(path), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            return loaded is null
+                ? new Dictionary<string, FolderProtection>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, FolderProtection>(loaded, StringComparer.OrdinalIgnoreCase);
+        }
+        catch (JsonException)
+        {
+            return new Dictionary<string, FolderProtection>(StringComparer.OrdinalIgnoreCase);
+        }
+        catch (IOException)
+        {
+            return new Dictionary<string, FolderProtection>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private void SaveFolderProtections()
+    {
+        var path = Path.Combine(_root, ".evidence", "folders.json");
+        WriteAtomic(path, JsonSerializer.SerializeToUtf8Bytes(FolderProtections,
+            new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    private sealed record FolderProtection(string Salt, string PasswordHash);
 
     private IEnumerable<string> EnumerateNoteFiles() =>
         Directory.EnumerateFiles(_root, "*", SearchOption.AllDirectories)

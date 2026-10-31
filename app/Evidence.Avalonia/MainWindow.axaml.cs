@@ -23,6 +23,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<NoteItem> _notes = [];
     private readonly Dictionary<string, List<string>> _links = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _titles = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _unlockedFolders = new(StringComparer.OrdinalIgnoreCase);
     private string _vaultPath = string.Empty;
     private string _currentPath = string.Empty;
     private string _language = "en";
@@ -64,7 +65,11 @@ public partial class MainWindow : Window
         OpenNoteButton.Click += async (_, _) => await OpenSelectedNoteAsync();
         NotesList.DoubleTapped += async (_, _) => await OpenSelectedNoteAsync();
         SearchBox.TextChanged += (_, _) => RefreshNotes();
-        FolderFilter.SelectionChanged += (_, _) => RefreshNotes();
+        FolderFilter.SelectionChanged += (_, _) =>
+        {
+            RefreshNotes();
+            UpdateFolderProtectionAction();
+        };
         Editor.TextChanged += OnEditorTextChanged;
         TagsInput.LostFocus += (_, _) => SaveCurrentTags();
         NewNoteButton.Click += async (_, _) => await CreateNoteAsync();
@@ -77,6 +82,7 @@ public partial class MainWindow : Window
         AttachButton.Click += async (_, _) => await AttachFileAsync();
         TemplatesButton.Click += async (_, _) => await ManageTemplatesAsync();
         EncryptButton.Click += async (_, _) => await EncryptOrUnlockAsync();
+        ProtectFolderButton.Click += async (_, _) => await ProtectFolderAsync();
         LinkButton.Click += async (_, _) => await InsertNoteLinkAsync();
         GraphButton.Click += async (_, _) => await ShowGraphAsync();
         ExportButton.Click += async (_, _) => await ExportAsync();
@@ -145,6 +151,7 @@ public partial class MainWindow : Window
         TemplatesButton.Content = T("Templates");
         EncryptButton.Content = T(IsEncrypted(_currentPath)
             ? (_notePassword is null ? "Unlock note" : "Lock note") : "Encrypt note");
+        UpdateFolderProtectionAction();
         LinkButton.Content = T("Link note");
         GraphButton.Content = T("Graph");
         ExportButton.Content = T("Export");
@@ -176,6 +183,14 @@ public partial class MainWindow : Window
             "Attach file" => "Прикрепить файл",
             "Templates" => "Шаблоны",
             "Encrypt note" => "Зашифровать заметку",
+                        "Protect folder" => "Защитить папку",
+                        "Unlock folder" => "Разблокировать папку",
+                        "Lock folder" => "Заблокировать папку",
+                        "Unlock the folder before creating a note." => "Разблокируйте папку перед созданием заметки.",
+                        "The password is incorrect." => "Неверный пароль.",
+                        "A note in this folder uses a different password." => "Одна из заметок в папке защищена другим паролем.",
+                        "Folder protected." => "Папка защищена.",
+                        "Could not protect the folder." => "Не удалось защитить папку.",
             "Unlock note" => "Разблокировать заметку",
             "Lock note" => "Заблокировать заметку",
             "Link note" => "Связать заметку",
@@ -228,6 +243,7 @@ public partial class MainWindow : Window
             "Could not rename the note." => "Не удалось переименовать заметку.",
             "A note with that name already exists." => "Заметка с таким названием уже существует.",
             "Could not move the note to the trash." => "Не удалось переместить заметку в корзину.",
+            "Could not delete the note permanently." => "Не удалось удалить заметку навсегда.",
             "The folder could not be opened." => "Не удалось открыть заметку.",
             "The note name is invalid." => "Недопустимое название заметки.",
             "No notes in trash" => "Корзина пуста",
@@ -297,7 +313,9 @@ public partial class MainWindow : Window
             IsEncrypted(_currentPath) && _notePassword is not null ? Editor.Text ?? string.Empty : string.Empty);
         _notes.Clear();
         _titles.Clear();
-        foreach (var note in found)
+        foreach (var note in found.Where(note => note.IsAttachment ||
+                     _vault.FindProtectedFolder(note.RelativePath) is not { } protectedFolder ||
+                     _unlockedFolders.ContainsKey(protectedFolder)))
         {
             _notes.Add(note);
             if (!note.IsAttachment)
@@ -307,6 +325,30 @@ public partial class MainWindow : Window
         NotesList.SelectedItem = _notes.FirstOrDefault(note => note.RelativePath == selectedPath);
         RebuildLinks();
         UpdateBacklinks();
+        UpdateFolderProtectionAction();
+    }
+
+    private string SelectedFolderPath()
+    {
+        var folder = FolderFilter.SelectedItem?.ToString() ?? string.Empty;
+        return folder == T("All folders") ? string.Empty : folder;
+    }
+
+    private static bool IsInsideFolder(string relativePath, string folder)
+    {
+        var path = relativePath.Replace('\\', '/');
+        var normalizedFolder = folder.Replace('\\', '/').TrimEnd('/');
+        return path.StartsWith(normalizedFolder + "/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void UpdateFolderProtectionAction()
+    {
+        var folder = SelectedFolderPath();
+        var protectedFolder = folder.Length == 0 ? null : _vault.FindProtectedFolder(folder);
+        ProtectFolderButton.IsEnabled = folder.Length > 0;
+        ProtectFolderButton.Content = T(protectedFolder is null
+            ? "Protect folder"
+            : _unlockedFolders.ContainsKey(protectedFolder) ? "Lock folder" : "Unlock folder");
     }
 
     private void RefreshFolderFilter()
@@ -433,7 +475,12 @@ public partial class MainWindow : Window
             string? password = null;
             if (IsEncrypted(relativePath))
             {
-                password = _notePassword ?? await ShowPasswordDialogAsync(T("Unlock note"), T("Password"));
+                var protectedFolder = _vault.FindProtectedFolder(relativePath);
+                var folderPassword = protectedFolder is not null &&
+                                     _unlockedFolders.TryGetValue(protectedFolder, out var savedPassword)
+                    ? savedPassword : null;
+                password = _notePassword ?? folderPassword ??
+                           await ShowPasswordDialogAsync(T("Unlock note"), T("Password"));
                 if (password is null)
                     return;
                 if (!SecureNote.TryDecrypt(bytes, password, out bytes))
@@ -508,10 +555,15 @@ public partial class MainWindow : Window
             if (choice != T("Blank"))
                 selectedTemplate = choice;
         }
-        var folder = FolderFilter.SelectedItem?.ToString() ?? string.Empty;
-        if (folder == T("All folders"))
-            folder = string.Empty;
+        var folder = SelectedFolderPath();
+        var protectedFolder = folder.Length == 0 ? null : _vault.FindProtectedFolder(folder);
+        if (protectedFolder is not null && !_unlockedFolders.ContainsKey(protectedFolder))
+        {
+            StatusLabel.Text = T("Unlock the folder before creating a note.");
+            return;
+        }
         var parent = folder.Length == 0 ? _vault.Root : _vault.FullPath(folder);
+        var extension = protectedFolder is null ? ".md" : ".evnote";
         Directory.CreateDirectory(parent);
         var number = 1;
         string title;
@@ -519,7 +571,7 @@ public partial class MainWindow : Window
         do
         {
             title = number == 1 ? "Untitled" : $"Untitled {number}";
-            path = Path.Combine(parent, title + ".md");
+            path = Path.Combine(parent, title + extension);
             number++;
         } while (File.Exists(path));
 
@@ -528,7 +580,10 @@ public partial class MainWindow : Window
             var content = selectedTemplate is null ? string.Empty : _vault.ReadTemplate(selectedTemplate)
                 .Replace("{{title}}", title, StringComparison.Ordinal)
                 .Replace("{{date}}", DateTime.Now.ToString("yyyy-MM-dd"), StringComparison.Ordinal);
-            VaultService.WriteAtomic(path, new UTF8Encoding(false).GetBytes(content));
+            var bytes = new UTF8Encoding(false).GetBytes(content);
+            if (protectedFolder is not null)
+                bytes = SecureNote.Encrypt(bytes, _unlockedFolders[protectedFolder]);
+            VaultService.WriteAtomic(path, bytes);
             var relative = Path.GetRelativePath(_vaultPath, path);
             RefreshNotes();
             await LoadNoteAsync(relative);
@@ -740,12 +795,12 @@ public partial class MainWindow : Window
                 Directory.Delete(entry.Directory, true);
                 entries.Remove(entry);
                 empty.IsVisible = entries.Count == 0;
-                restore.IsEnabled = entries.Count > 0;
-                delete.IsEnabled = entries.Count > 0;
+                restore.IsEnabled = list.SelectedItem is TrashEntry;
+                delete.IsEnabled = list.SelectedItem is TrashEntry;
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
-                StatusLabel.Text = T("Could not move the note to the trash.");
+                StatusLabel.Text = T("Could not delete the note permanently.");
             }
         };
         close.Click += (_, _) => dialog.Close();
@@ -914,7 +969,8 @@ public partial class MainWindow : Window
             return;
         try
         {
-            var folder = _vault.CreateFolder(requested);
+            var parent = SelectedFolderPath();
+            var folder = _vault.CreateFolder(parent.Length == 0 ? requested : $"{parent}/{requested}");
             RefreshFolderFilter();
             FolderFilter.SelectedItem = folder;
             RefreshNotes();
@@ -926,6 +982,107 @@ public partial class MainWindow : Window
         catch (IOException)
         {
             StatusLabel.Text = T("Could not create the folder.");
+        }
+    }
+
+    private async Task ProtectFolderAsync()
+    {
+        var folder = SelectedFolderPath();
+        if (folder.Length == 0)
+            return;
+
+        var protectedFolder = _vault.FindProtectedFolder(folder);
+        if (protectedFolder is not null)
+        {
+            if (_unlockedFolders.ContainsKey(protectedFolder))
+            {
+                if (IsInsideFolder(_currentPath, protectedFolder) &&
+                    !await PrepareToLeaveNoteAsync())
+                    return;
+                if (IsInsideFolder(_currentPath, protectedFolder))
+                    SetCurrentNote(null);
+                _unlockedFolders.Remove(protectedFolder);
+                RefreshNotes();
+                return;
+            }
+
+            var unlockPassword = await ShowPasswordDialogAsync(T("Unlock folder"), T("Password"));
+            if (unlockPassword is null)
+                return;
+            if (!_vault.VerifyFolderPassword(protectedFolder, unlockPassword))
+            {
+                StatusLabel.Text = T("The password is incorrect.");
+                return;
+            }
+            _unlockedFolders[protectedFolder] = unlockPassword;
+            RefreshNotes();
+            return;
+        }
+
+        if (!await PrepareToLeaveNoteAsync())
+            return;
+        var password = await ShowPasswordDialogAsync(T("Protect folder"), T("Password"));
+        if (string.IsNullOrEmpty(password))
+        {
+            if (password is not null)
+                StatusLabel.Text = T("The password cannot be empty.");
+            return;
+        }
+        var confirmation = await ShowPasswordDialogAsync(T("Protect folder"), T("Confirm password"));
+        if (password != confirmation)
+        {
+            StatusLabel.Text = T("Passwords do not match.");
+            return;
+        }
+
+        try
+        {
+            var absoluteFolder = _vault.FullPath(folder);
+            var noteFiles = Directory.EnumerateFiles(absoluteFolder, "*", SearchOption.AllDirectories)
+                .Where(path => Path.GetExtension(path) is var extension &&
+                    (extension.Equals(".md", StringComparison.OrdinalIgnoreCase) ||
+                     extension.Equals(".markdown", StringComparison.OrdinalIgnoreCase) ||
+                     extension.Equals(".evnote", StringComparison.OrdinalIgnoreCase)))
+                .ToArray();
+            var pending = new List<(string Source, string Destination, byte[] Contents)>();
+            foreach (var source in noteFiles)
+            {
+                var bytes = await File.ReadAllBytesAsync(source);
+                if (Path.GetExtension(source).Equals(".evnote", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!SecureNote.TryDecrypt(bytes, password, out _))
+                    {
+                        StatusLabel.Text = T("A note in this folder uses a different password.");
+                        return;
+                    }
+                    continue;
+                }
+                var destination = Path.ChangeExtension(source, ".evnote");
+                if (File.Exists(destination))
+                {
+                    StatusLabel.Text = T("A note with that name already exists.");
+                    return;
+                }
+                pending.Add((source, destination, bytes));
+            }
+
+            foreach (var (source, destination, contents) in pending)
+            {
+                VaultService.WriteAtomic(destination, SecureNote.Encrypt(contents, password));
+                var oldRelative = _vault.Relative(source);
+                var newRelative = _vault.Relative(destination);
+                File.Delete(source);
+                _vault.MoveTags(oldRelative, newRelative);
+            }
+            _vault.SetFolderPassword(folder, password);
+            _unlockedFolders[_vault.FindProtectedFolder(folder) ?? folder.Replace('\\', '/')] = password;
+            SetCurrentNote(null);
+            RefreshNotes();
+            StatusLabel.Text = T("Folder protected.");
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or CryptographicException)
+        {
+            StatusLabel.Text = T("Could not protect the folder.");
         }
     }
 
@@ -1308,20 +1465,29 @@ public partial class MainWindow : Window
     {
         var selectedNotes = NotesList.SelectedItems?.OfType<NoteItem>()
             .Where(item => !item.IsAttachment).ToArray() ?? [];
-        var folder = FolderFilter.SelectedItem?.ToString() ?? string.Empty;
-        if (folder == T("All folders"))
-            folder = string.Empty;
-        var paths = (selectedNotes.Length > 1
-            ? selectedNotes.Select(item => item.RelativePath)
-            : folder.Length > 0
-                ? _vault.GetItems(string.Empty, folder).Where(item => !item.IsAttachment)
-                    .Select(item => item.RelativePath)
-                : selectedNotes.Length == 1
-                    ? [selectedNotes[0].RelativePath]
-                    : _currentPath.Length > 0
-                        ? [_currentPath]
-                        : _vault.GetItems(string.Empty, string.Empty).Where(item => !item.IsAttachment)
-                            .Select(item => item.RelativePath)).ToArray();
+        var folder = SelectedFolderPath();
+        var scopes = new List<string>();
+        if (_currentPath.Length > 0)
+            scopes.Add(T("Current note"));
+        if (selectedNotes.Length > 0)
+            scopes.Add(T("Selected notes"));
+        if (folder.Length > 0)
+            scopes.Add(T("Current folder"));
+        scopes.Add(T("Entire vault"));
+        var scope = await ShowChoiceDialogAsync(T("Export notes"), T("Choose what to export"), scopes);
+        if (scope is null)
+            return;
+        IEnumerable<string> selectedPaths = scope switch
+        {
+            var value when value == T("Current note") && _currentPath.Length > 0 => [_currentPath],
+            var value when value == T("Selected notes") => selectedNotes.Select(item => item.RelativePath),
+            var value when value == T("Current folder") && folder.Length > 0 =>
+                _vault.GetItems(string.Empty, folder).Where(item => !item.IsAttachment)
+                    .Select(item => item.RelativePath),
+            _ => _vault.GetItems(string.Empty, string.Empty).Where(item => !item.IsAttachment)
+                .Select(item => item.RelativePath)
+        };
+        var paths = selectedPaths.ToArray();
         if (paths.Length == 0)
         {
             StatusLabel.Text = T("No notes selected for export.");
@@ -1339,7 +1505,11 @@ public partial class MainWindow : Window
                 var bytes = await File.ReadAllBytesAsync(_vault.FullPath(path));
                 if (IsEncrypted(path))
                 {
-                    var password = await ShowPasswordDialogAsync(T("Export notes"), T("Password"));
+                    var protectedFolder = _vault.FindProtectedFolder(path);
+                    var password = path == _currentPath ? _notePassword : null;
+                    if (password is null && protectedFolder is not null)
+                        _unlockedFolders.TryGetValue(protectedFolder, out password);
+                    password ??= await ShowPasswordDialogAsync(T("Export notes"), T("Password"));
                     if (password is null || !SecureNote.TryDecrypt(bytes, password, out bytes))
                     {
                         StatusLabel.Text = T("The password is incorrect or the note is damaged.");
