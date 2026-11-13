@@ -1,6 +1,6 @@
 # evidence
 
-`evidence` is a [[potential]] cross-platform desktop app for Markdown notes. The active application is built with Avalonia UI and .NET 10. It stores notes as local files in a user-selected vault; there is no server or cloud account.
+`evidence` is a potential cross-platform desktop app for Markdown notes. The active application is built with Avalonia UI and .NET 10. It stores notes as local files in a user-selected vault; there is no server or cloud account.
 
 ## Features
 
