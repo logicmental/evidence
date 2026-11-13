@@ -1,0 +1,160 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:Evidence"
+        xmlns:md="using:Markdown.Avalonia"
+        x:Class="Evidence.MainWindow"
+        Title="evidence"
+        Width="1280" Height="820"
+        MinWidth="900" MinHeight="600"
+        Background="#F5F5F7">
+    <Grid RowDefinitions="68,48,*">
+        <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E5E5EA" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="230,*,Auto" Margin="24,0">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <Border Width="34" Height="34" CornerRadius="11" Background="#E5F1FF">
+                        <TextBlock Text="e" FontSize="23" FontWeight="Bold" Foreground="#007AFF"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel Spacing="1" VerticalAlignment="Center">
+                        <TextBlock Text="evidence" FontSize="16" FontWeight="SemiBold" Foreground="#1D1D1F" />
+                        <TextBlock x:Name="VaultLabel" Text="Personal vault" FontSize="11" Foreground="#86868B" />
+                    </StackPanel>
+                </StackPanel>
+                <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Disabled" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <Button x:Name="NewNoteButton" Classes="primary" Content="New note" />
+                        <Button x:Name="NewFolderButton" Content="New category" />
+                        <Button x:Name="OpenNoteButton" Content="Open note" />
+                        <Button x:Name="SaveButton" Content="Save" />
+                        <Button x:Name="OpenFolderButton" Content="Open folder" />
+                        <Button x:Name="TrashButton" Content="Trash" />
+                    </StackPanel>
+                </ScrollViewer>
+                <ComboBox x:Name="LanguageSelector" Grid.Column="2" Width="118" VerticalAlignment="Center"
+                          SelectedIndex="0">
+                    <ComboBoxItem Content="English" Tag="en" />
+                    <ComboBoxItem Content="Русский" Tag="ru" />
+                </ComboBox>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="1" Background="#FAFAFC" BorderBrush="#E5E5EA" BorderThickness="0,0,0,1">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="20,0" Spacing="7">
+                    <Button x:Name="AttachButton" Content="Attach file" />
+                    <Button x:Name="TemplatesButton" Content="Templates" />
+                    <Button x:Name="EncryptButton" Content="Encrypt note" />
+                    <Button x:Name="ProtectFolderButton" Content="Protect folder" />
+                    <Button x:Name="LinkButton" Content="Link note" />
+                    <Button x:Name="GraphButton" Content="Graph" />
+                    <Button x:Name="ExportButton" Content="Export" />
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <Grid Grid.Row="2" ColumnDefinitions="280,*">
+            <Border Grid.Column="0" Background="#F0F0F5" BorderBrush="#E5E5EA" BorderThickness="0,0,1,0">
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto,110,Auto" Margin="18,22,14,16">
+                    <TextBlock x:Name="SidebarEyebrow" Text="YOUR NOTES" Classes="eyebrow" Margin="5,0,0,13" />
+                    <TextBox x:Name="SearchBox" Grid.Row="1" PlaceholderText="Search notes" Margin="0,0,0,15" />
+                    <ComboBox x:Name="FolderFilter" Grid.Row="2" PlaceholderText="All folders" Margin="0,0,0,15" />
+                    <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="5,0,4,8">
+                        <TextBlock x:Name="NotesHeading" Text="Notes" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="#424245" VerticalAlignment="Center" />
+                        <TextBlock x:Name="NoteCount" Grid.Column="1" Text="0" FontSize="11"
+                                   Foreground="#86868B" VerticalAlignment="Center" />
+                    </Grid>
+                    <ListBox x:Name="NotesList" Grid.Row="4" SelectionMode="Multiple">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="local:NoteItem">
+                                <Border CornerRadius="8" Padding="9,8" Margin="2,3">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold"
+                                                   Foreground="#1D1D1F" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding RelativePath}" FontSize="10" Foreground="#86868B"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding TagsDisplay}" FontSize="10" Foreground="#007A73"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <TextBlock x:Name="BacklinksHeading" Grid.Row="5" Text="BACKLINKS" Classes="eyebrow"
+                               Margin="5,12,0,5" />
+                    <ListBox x:Name="BacklinksList" Grid.Row="6" />
+                    <StackPanel Grid.Row="7" Spacing="8" Margin="5,14,4,0">
+                        <Border Height="1" Background="#DEDEE3" />
+                        <TextBlock x:Name="VaultPathLabel" Text="" FontSize="10" Foreground="#86868B"
+                                   TextTrimming="CharacterEllipsis" ToolTip.Tip="Vault path" />
+                        <TextBlock x:Name="StatusLabel" Text="Ready" FontSize="11" Foreground="#6E6E73" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Column="1" RowDefinitions="Auto,Auto,*,Auto" Margin="30,24,30,18">
+                <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto" Margin="2,0,2,18">
+                    <StackPanel Spacing="5" VerticalAlignment="Center">
+                        <TextBlock x:Name="NoteTitle" Text="Select a note" FontSize="27" FontWeight="SemiBold"
+                                   Foreground="#1D1D1F" TextTrimming="CharacterEllipsis" />
+                        <TextBlock x:Name="NoteSubtitle" Text="Markdown note" FontSize="11" Foreground="#86868B" />
+                    </StackPanel>
+                    <Button x:Name="RenameButton" Grid.Column="1" Content="Rename" VerticalAlignment="Center"
+                            Margin="10,0,0,0" />
+                    <Button x:Name="DeleteButton" Grid.Column="2" Classes="danger" Content="Move to trash"
+                            VerticalAlignment="Center" Margin="8,0,0,0" />
+                    <TextBlock x:Name="DirtyIndicator" Grid.Column="3" Text="Unsaved" Foreground="#B45309"
+                               FontSize="11" VerticalAlignment="Center" Margin="14,0,0,0" IsVisible="False" />
+                </Grid>
+
+                <TextBox x:Name="TagsInput" Grid.Row="1" PlaceholderText="Tags, separated by commas"
+                         Margin="2,0,2,14" />
+
+                <Grid Grid.Row="2" ColumnDefinitions="1.15*,0.85*" ColumnSpacing="14">
+                    <Border Grid.Column="0" Classes="panel" CornerRadius="12">
+                        <Grid RowDefinitions="42,42,*">
+                            <Border Grid.Row="0" Background="#FAFAFC" BorderBrush="#E5E5EA" BorderThickness="0,0,0,1"
+                                    CornerRadius="12,12,0,0">
+                                <TextBlock x:Name="EditorHeading" Text="EDITOR" Classes="eyebrow"
+                                           VerticalAlignment="Center" Margin="18,0" />
+                            </Border>
+                            <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Auto"
+                                          VerticalScrollBarVisibility="Disabled">
+                                <StackPanel Orientation="Horizontal" Spacing="4" Margin="10,4">
+                                    <Button x:Name="BoldButton" Content="B" ToolTip.Tip="Bold" Padding="9,5" />
+                                    <Button x:Name="ItalicButton" Content="I" ToolTip.Tip="Italic" Padding="9,5" />
+                                    <Button x:Name="CodeButton" Content="Code" ToolTip.Tip="Inline code" Padding="9,5" />
+                                    <Button x:Name="LinkFormatButton" Content="Link" ToolTip.Tip="Markdown link" Padding="9,5" />
+                                    <Button x:Name="Heading1Button" Content="H1" ToolTip.Tip="Heading 1" Padding="9,5" />
+                                    <Button x:Name="Heading2Button" Content="H2" ToolTip.Tip="Heading 2" Padding="9,5" />
+                                    <Button x:Name="ListButton" Content="List" ToolTip.Tip="List" Padding="9,5" />
+                                    <Button x:Name="QuoteButton" Content="Quote" ToolTip.Tip="Quote" Padding="9,5" />
+                                    <Button x:Name="UndoButton" Content="Undo" ToolTip.Tip="Undo" Padding="9,5" />
+                                    <Button x:Name="RedoButton" Content="Redo" ToolTip.Tip="Redo" Padding="9,5" />
+                                </StackPanel>
+                            </ScrollViewer>
+                            <TextBox x:Name="Editor" Grid.Row="2" Classes="editor" AcceptsReturn="True" AcceptsTab="True"
+                                     TextWrapping="Wrap" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     FontFamily="monospace" FontSize="14"
+                                     PlaceholderText="Start writing in Markdown..." />
+                        </Grid>
+                    </Border>
+                    <Border Grid.Column="1" Classes="panel" CornerRadius="12">
+                        <Grid RowDefinitions="42,*">
+                            <Border Grid.Row="0" Background="#FAFAFC" BorderBrush="#E5E5EA" BorderThickness="0,0,0,1"
+                                    CornerRadius="12,12,0,0">
+                                <TextBlock x:Name="PreviewHeading" Text="PREVIEW" Classes="eyebrow"
+                                           VerticalAlignment="Center" Margin="18,0" />
+                            </Border>
+                            <md:MarkdownScrollViewer x:Name="PreviewText" Grid.Row="1" Padding="22" />
+                        </Grid>
+                    </Border>
+                </Grid>
+
+                <TextBlock x:Name="FooterStatus" Grid.Row="3" Text="Markdown · UTF-8" FontSize="10"
+                           Foreground="#86868B" Margin="3,10,0,0" />
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>
