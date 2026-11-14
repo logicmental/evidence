@@ -2,3 +2,5 @@
 /dist/payload/
 app/**/bin/
 app/**/obj/
+installer/**/bin/
+installer/**/obj/

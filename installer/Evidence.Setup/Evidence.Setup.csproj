@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>evidence-setup</AssemblyName>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ApplicationIcon>..\evidence.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
+    <PackageReference Include="ShadUI" Version="0.2.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="..\evidence.ico" Link="Assets\evidence.ico" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(CoreInstallerPath)' != ''">
+    <EmbeddedResource Include="$(CoreInstallerPath)" LogicalName="Evidence.Setup.CoreInstaller.exe" />
+  </ItemGroup>
+</Project>

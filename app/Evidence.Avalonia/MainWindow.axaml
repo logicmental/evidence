@@ -11,9 +11,14 @@
         <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E5E5EA" BorderThickness="0,0,0,1">
             <Grid ColumnDefinitions="230,*,Auto" Margin="24,0">
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                    <Border Width="34" Height="34" CornerRadius="11" Background="#E5F1FF">
-                        <TextBlock Text="e" FontSize="23" FontWeight="Bold" Foreground="#007AFF"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <Border Width="34" Height="34" CornerRadius="17" Background="#2AABEE">
+                        <Grid Width="24" Height="24">
+                            <Ellipse Width="14" Height="14" Margin="2"
+                                     HorizontalAlignment="Left" VerticalAlignment="Top"
+                                     Stroke="White" StrokeThickness="2.5" />
+                            <Line StartPoint="13,13" EndPoint="21,21"
+                                  Stroke="White" StrokeThickness="2.5" StrokeLineCap="Round" />
+                        </Grid>
                     </Border>
                     <StackPanel Spacing="1" VerticalAlignment="Center">
                         <TextBlock Text="evidence" FontSize="16" FontWeight="SemiBold" Foreground="#1D1D1F" />
@@ -27,7 +32,8 @@
                         <Button x:Name="NewFolderButton" Content="New category" />
                         <Button x:Name="OpenNoteButton" Content="Open note" />
                         <Button x:Name="SaveButton" Content="Save" />
-                        <Button x:Name="OpenFolderButton" Content="Open folder" />
+                        <Button x:Name="OpenFolderButton" Content="Notes location..."
+                                ToolTip.Tip="Choose the default folder for your notes" />
                         <Button x:Name="TrashButton" Content="Trash" />
                     </StackPanel>
                 </ScrollViewer>
@@ -66,12 +72,29 @@
                                    Foreground="#86868B" VerticalAlignment="Center" />
                     </Grid>
                     <ListBox x:Name="NotesList" Grid.Row="4" SelectionMode="Multiple">
+                        <ListBox.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem x:Name="ContextNewNoteItem" Header="New note" />
+                                <MenuItem x:Name="ContextNewCategoryItem" Header="New category" />
+                                <Separator />
+                                <MenuItem x:Name="ContextOpenItem" Header="Open note" />
+                                <MenuItem x:Name="ContextRenameItem" Header="Rename" />
+                                <MenuItem x:Name="ContextDeleteItem" Header="Move to trash" />
+                                <Separator />
+                                <MenuItem x:Name="ContextSaveItem" Header="Save" />
+                                <MenuItem x:Name="ContextAttachItem" Header="Attach file" />
+                                <MenuItem x:Name="ContextTemplatesItem" Header="Templates" />
+                                <MenuItem x:Name="ContextTrashItem" Header="Trash" />
+                            </ContextMenu>
+                        </ListBox.ContextMenu>
                         <ListBox.ItemTemplate>
                             <DataTemplate DataType="local:NoteItem">
                                 <Border CornerRadius="8" Padding="9,8" Margin="2,3">
                                     <StackPanel Spacing="4">
                                         <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold"
                                                    Foreground="#1D1D1F" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding KindDisplay}" FontSize="9" FontWeight="SemiBold"
+                                                   Foreground="#007AFF" IsVisible="{Binding IsAttachment}" />
                                         <TextBlock Text="{Binding RelativePath}" FontSize="10" Foreground="#86868B"
                                                    TextTrimming="CharacterEllipsis" />
                                         <TextBlock Text="{Binding TagsDisplay}" FontSize="10" Foreground="#007A73"
@@ -137,7 +160,11 @@
                             <TextBox x:Name="Editor" Grid.Row="2" Classes="editor" AcceptsReturn="True" AcceptsTab="True"
                                      TextWrapping="Wrap" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                      FontFamily="monospace" FontSize="14"
-                                     PlaceholderText="Start writing in Markdown..." />
+                                     TextAlignment="Left" VerticalContentAlignment="Top" Padding="16" />
+                            <TextBlock x:Name="EditorPlaceholder" Grid.Row="2" Text="Start writing in Markdown..."
+                                       FontFamily="monospace" FontSize="14" Foreground="#86868B"
+                                       Margin="18,16,16,0" VerticalAlignment="Top"
+                                       IsHitTestVisible="False" />
                         </Grid>
                     </Border>
                     <Border Grid.Column="1" Classes="panel" CornerRadius="12">

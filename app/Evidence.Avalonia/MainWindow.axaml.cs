@@ -9,6 +9,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Security.Cryptography;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -24,7 +25,14 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, List<string>> _links = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _titles = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _unlockedFolders = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Regex MarkdownImageLinkPattern = new(
+        @"(?<!!)\[(?<alt>(?:\\.|[^\]])*)\]\(<(?<path>[^>]+)>\)",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private readonly string _legacyVaultPath;
     private string _vaultPath = string.Empty;
+    private bool _customVaultPath;
+    private bool _needsInitialVaultSelection;
+    private bool _legacyMigrationPending;
     private string _currentPath = string.Empty;
     private string _language = "en";
     private string? _notePassword;
@@ -46,14 +54,20 @@ public partial class MainWindow : Window
         if (_language is not ("ru" or "en"))
             _language = "en";
         var applicationVault = Path.Combine(AppContext.BaseDirectory, "Notes");
-        var legacyVault = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "evidence");
-        var hasCustomVault = !string.IsNullOrWhiteSpace(settings.VaultPath) &&
-                             !PathsEqual(settings.VaultPath, legacyVault) &&
-                             !PathsEqual(settings.VaultPath, applicationVault);
-        _vaultPath = hasCustomVault ? settings.VaultPath : applicationVault;
+        _legacyVaultPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "evidence");
+        var hasSavedVault = !string.IsNullOrWhiteSpace(settings.VaultPath);
+        _needsInitialVaultSelection = !hasSavedVault;
+        _legacyMigrationPending = !hasSavedVault;
+        var savedVaultIsCurrentDefault = hasSavedVault && PathsEqual(settings.VaultPath, applicationVault);
+        var savedVaultIsPreviousDefault = hasSavedVault && !savedVaultIsCurrentDefault &&
+                                          IsApplicationAdjacentVault(settings.VaultPath);
+        var inferredCustomVault = hasSavedVault && !savedVaultIsCurrentDefault && !savedVaultIsPreviousDefault;
+        _customVaultPath = hasSavedVault && (settings.IsCustomVault ?? inferredCustomVault);
+        _vaultPath = _customVaultPath ? settings.VaultPath : applicationVault;
         Directory.CreateDirectory(_vaultPath);
-        if (!hasCustomVault)
-            TryMigrateVault(legacyVault, _vaultPath);
+        var migrationFailed = false;
+        if (hasSavedVault && !_customVaultPath && !savedVaultIsCurrentDefault)
+            migrationFailed = !TryMigrateVault(settings.VaultPath, applicationVault);
         _vault = new VaultService(_vaultPath);
 
         LanguageSelector.SelectedIndex = _language == "ru" ? 1 : 0;
@@ -102,12 +116,53 @@ public partial class MainWindow : Window
                 await LoadNoteAsync(backlink.RelativePath);
         };
         LanguageSelector.SelectionChanged += OnLanguageChanged;
+        NotesList.SelectionChanged += (_, _) =>
+        {
+            UpdateDeleteAction();
+            UpdateNotesContextMenu();
+        };
+        NotesList.PointerPressed += OnNotesListPointerPressed;
+        ContextNewNoteItem.Click += async (_, _) => await CreateNoteAsync();
+        ContextNewCategoryItem.Click += async (_, _) => await CreateFolderAsync();
+        ContextOpenItem.Click += async (_, _) => await OpenSelectedNoteAsync();
+        ContextRenameItem.Click += async (_, _) =>
+        {
+            var selected = NotesList.SelectedItems?.OfType<NoteItem>().FirstOrDefault();
+            if (selected is null)
+                await RenameNoteAsync();
+            else if (await OpenSelectedNoteForContextActionAsync())
+                await RenameNoteAsync();
+        };
+        ContextDeleteItem.Click += async (_, _) =>
+        {
+            var selected = NotesList.SelectedItems?.OfType<NoteItem>().FirstOrDefault();
+            if (selected?.IsAttachment == true)
+                await MoveNoteToTrashAsync();
+            else if (selected is null && _currentPath.Length > 0)
+                await MoveNoteToTrashAsync();
+            else if (await OpenSelectedNoteForContextActionAsync())
+                await MoveNoteToTrashAsync();
+        };
+        ContextSaveItem.Click += async (_, _) => await SaveNoteAsync();
+        ContextAttachItem.Click += async (_, _) =>
+        {
+            var selected = NotesList.SelectedItems?.OfType<NoteItem>().FirstOrDefault();
+            if (selected?.IsAttachment == true)
+                return;
+            if (selected is null || await OpenSelectedNoteForContextActionAsync())
+                await AttachFileAsync();
+        };
+        ContextTemplatesItem.Click += async (_, _) => await ManageTemplatesAsync();
+        ContextTrashItem.Click += async (_, _) => await OpenTrashAsync();
         _refreshTimer.Tick += (_, _) => { _refreshTimer.Stop(); RefreshNotes(); };
+        Opened += OnFirstRunOpened;
 
         SetCurrentNote(null);
         RefreshFolderFilter();
         RefreshNotes();
         SetupWatcher();
+        if (migrationFailed)
+            StatusLabel.Text = T("Could not copy notes from the previous default folder.");
         SaveSettings();
         TryRemoveBootstrapFile();
     }
@@ -126,8 +181,30 @@ public partial class MainWindow : Window
         base.OnClosing(e);
     }
 
+    protected override void OnClosed(EventArgs e)
+    {
+        _refreshTimer.Stop();
+        _watcher?.Dispose();
+        _watcher = null;
+        base.OnClosed(e);
+    }
+
+    private async void OnFirstRunOpened(object? sender, EventArgs e)
+    {
+        Opened -= OnFirstRunOpened;
+        if (!_needsInitialVaultSelection)
+            return;
+        _needsInitialVaultSelection = false;
+        await OpenFolderAsync();
+        if (_legacyMigrationPending)
+            MigrateLegacyVault(_vaultPath);
+    }
+
     private void ApplyLanguage()
     {
+        if (Application.Current is App app)
+            app.Theme.Locale = _language == "ru" ? "ru-RU" : "en-US";
+
         Title = "evidence";
         VaultLabel.Text = Path.GetFileName(_vaultPath.TrimEnd(Path.DirectorySeparatorChar,
             Path.AltDirectorySeparatorChar));
@@ -136,13 +213,14 @@ public partial class MainWindow : Window
         NotesHeading.Text = T("Notes");
         NewNoteButton.Content = T("New note");
         SaveButton.Content = T("Save");
-        OpenFolderButton.Content = T("Open folder");
+        OpenFolderButton.Content = T("Notes location...");
+        ToolTip.SetTip(OpenFolderButton, T("Choose the default folder for your notes"));
         TrashButton.Content = T("Trash");
         EditorHeading.Text = T("EDITOR");
         PreviewHeading.Text = T("PREVIEW");
-        Editor.PlaceholderText = T("Start writing in Markdown...");
+        EditorPlaceholder.Text = T("Start writing in Markdown...");
         RenameButton.Content = T("Rename");
-        DeleteButton.Content = T("Move to trash");
+        UpdateDeleteAction();
         DirtyIndicator.Text = T("Unsaved");
         FooterStatus.Text = T("Markdown · UTF-8");
         NewFolderButton.Content = T("New category");
@@ -155,10 +233,19 @@ public partial class MainWindow : Window
         LinkButton.Content = T("Link note");
         GraphButton.Content = T("Graph");
         ExportButton.Content = T("Export");
+        ContextNewNoteItem.Header = T("New note");
+        ContextNewCategoryItem.Header = T("New category");
+        ContextOpenItem.Header = T("Open note");
+        ContextRenameItem.Header = T("Rename");
+        ContextSaveItem.Header = T("Save");
+        ContextAttachItem.Header = T("Attach file");
+        ContextTemplatesItem.Header = T("Templates");
+        ContextTrashItem.Header = T("Trash");
         BacklinksHeading.Text = T("BACKLINKS");
         FolderFilter.PlaceholderText = T("All folders");
         RefreshFolderFilter();
         StatusLabel.Text = T("Ready");
+        UpdateDeleteAction();
         if (_currentPath.Length == 0)
             NoteTitle.Text = T("Select a note");
     }
@@ -175,7 +262,9 @@ public partial class MainWindow : Window
             "Notes" => "Заметки",
             "New note" => "Новая заметка",
             "Save" => "Сохранить",
-            "Open folder" => "Открыть папку",
+            "Attachment" => "Вложение",
+            "Notes location..." => "Папка заметок...",
+            "Choose the default folder for your notes" => "Выбрать папку для хранения заметок по умолчанию",
             "Trash" => "Корзина",
             "New folder" => "Новая папка",
             "New category" => "Новая категория",
@@ -239,10 +328,15 @@ public partial class MainWindow : Window
             "Rename note" => "Переименовать заметку",
             "Delete note?" => "Удалить заметку?",
             "Move this note to the trash?" => "Переместить эту заметку в корзину?",
+            "Delete attachment" => "Удалить вложение",
+            "Delete this attachment permanently? Links to it in notes will stop working." =>
+                "Удалить вложение безвозвратно? Ссылки на него в заметках перестанут работать.",
             "Could not save the note." => "Не удалось сохранить заметку.",
+            "Could not save settings." => "Не удалось сохранить настройки.",
             "Could not rename the note." => "Не удалось переименовать заметку.",
             "A note with that name already exists." => "Заметка с таким названием уже существует.",
             "Could not move the note to the trash." => "Не удалось переместить заметку в корзину.",
+            "Could not delete the attachment." => "Не удалось удалить вложение.",
             "Could not delete the note permanently." => "Не удалось удалить заметку навсегда.",
             "The folder could not be opened." => "Не удалось открыть заметку.",
             "The note name is invalid." => "Недопустимое название заметки.",
@@ -255,6 +349,9 @@ public partial class MainWindow : Window
             "A note already exists at that location." => "В этом месте уже есть заметка.",
             "Could not restore the note." => "Не удалось восстановить заметку.",
             "Open notes folder" => "Открыть папку заметок",
+            "Choose notes location" => "Выберите папку для заметок",
+            "Could not copy notes from the previous default folder." =>
+                "Не удалось скопировать заметки из прежней папки по умолчанию.",
             "Continue" => "Продолжить",
             _ => text
         };
@@ -271,6 +368,7 @@ public partial class MainWindow : Window
 
     private void OnEditorTextChanged(object? sender, TextChangedEventArgs e)
     {
+        UpdateEditorPlaceholder();
         if (_loadingNote || _currentPath.Length == 0)
             return;
         _dirty = true;
@@ -317,12 +415,13 @@ public partial class MainWindow : Window
                      _vault.FindProtectedFolder(note.RelativePath) is not { } protectedFolder ||
                      _unlockedFolders.ContainsKey(protectedFolder)))
         {
-            _notes.Add(note);
+            _notes.Add(note.IsAttachment ? note with { KindDisplay = T("Attachment") } : note);
             if (!note.IsAttachment)
                 _titles[note.RelativePath] = note.Title;
         }
-        NoteCount.Text = _notes.Count.ToString();
+        NoteCount.Text = _notes.Count(note => !note.IsAttachment).ToString();
         NotesList.SelectedItem = _notes.FirstOrDefault(note => note.RelativePath == selectedPath);
+        UpdateDeleteAction();
         RebuildLinks();
         UpdateBacklinks();
         UpdateFolderProtectionAction();
@@ -499,7 +598,7 @@ public partial class MainWindow : Window
             NoteTitle.Text = Path.GetFileNameWithoutExtension(fullPath);
             NoteSubtitle.Text = relativePath.Replace(Path.DirectorySeparatorChar, '/');
             TagsInput.Text = string.Join(", ", _vault.Tags.GetValueOrDefault(relativePath) ?? []);
-            PreviewText.Markdown = RenderPreview(contents);
+            UpdatePreview();
             _dirty = false;
             DirtyIndicator.IsVisible = false;
             SetNoteActionsEnabled(true);
@@ -529,8 +628,65 @@ public partial class MainWindow : Window
         _dirty = false;
         DirtyIndicator.IsVisible = false;
         SetNoteActionsEnabled(relativePath is not null);
+        UpdateDeleteAction();
         UpdateEncryptionAction();
         _loadingNote = false;
+        UpdateEditorPlaceholder();
+    }
+
+    private void UpdateDeleteAction()
+    {
+        var selectedAttachment = NotesList.SelectedItems?.OfType<NoteItem>()
+            .FirstOrDefault(note => note.IsAttachment);
+        if (selectedAttachment is not null)
+        {
+            DeleteButton.Content = T("Delete attachment");
+            DeleteButton.IsEnabled = true;
+            UpdateNotesContextMenu();
+            return;
+        }
+
+        DeleteButton.Content = T("Move to trash");
+        DeleteButton.IsEnabled = _currentPath.Length > 0;
+        UpdateNotesContextMenu();
+    }
+
+    private void UpdateNotesContextMenu()
+    {
+        var selected = NotesList.SelectedItems?.OfType<NoteItem>().FirstOrDefault();
+        ContextOpenItem.IsEnabled = selected is not null;
+        ContextRenameItem.IsEnabled = selected is { IsAttachment: false };
+        ContextDeleteItem.IsEnabled = selected is not null || _currentPath.Length > 0;
+        ContextDeleteItem.Header = selected?.IsAttachment == true
+            ? T("Delete attachment")
+            : T("Move to trash");
+        ContextSaveItem.IsEnabled = _currentPath.Length > 0;
+        ContextAttachItem.IsEnabled = selected is { IsAttachment: false } || _currentPath.Length > 0;
+    }
+
+    private void OnNotesListPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(NotesList).Properties.IsRightButtonPressed ||
+            e.Source is not Control { DataContext: NoteItem note })
+            return;
+
+        var isSelected = NotesList.SelectedItems?.OfType<NoteItem>().Contains(note) == true;
+        if (!isSelected)
+            NotesList.SelectedItem = note;
+    }
+
+    private async Task<bool> OpenSelectedNoteForContextActionAsync()
+    {
+        var selected = NotesList.SelectedItems?.OfType<NoteItem>().FirstOrDefault();
+        if (selected is null || selected.IsAttachment)
+            return false;
+        if (selected.RelativePath == _currentPath)
+            return true;
+        if (!await PrepareToLeaveNoteAsync())
+            return false;
+
+        await LoadNoteAsync(selected.RelativePath);
+        return selected.RelativePath.Equals(_currentPath, StringComparison.OrdinalIgnoreCase);
     }
 
     private void SetNoteActionsEnabled(bool enabled)
@@ -540,7 +696,12 @@ public partial class MainWindow : Window
         SaveButton.IsEnabled = enabled;
         RenameButton.IsEnabled = enabled;
         DeleteButton.IsEnabled = enabled;
+        UpdateNotesContextMenu();
+        UpdateEditorPlaceholder();
     }
+
+    private void UpdateEditorPlaceholder() =>
+        EditorPlaceholder.IsVisible = Editor.IsEnabled && string.IsNullOrEmpty(Editor.Text);
 
     private async Task CreateNoteAsync()
     {
@@ -618,7 +779,7 @@ public partial class MainWindow : Window
             _dirty = false;
             DirtyIndicator.IsVisible = false;
             StatusLabel.Text = T("Ready");
-            PreviewText.Markdown = RenderPreview(Editor.Text ?? string.Empty);
+            UpdatePreview();
             RefreshNotes();
             return true;
         }
@@ -669,6 +830,26 @@ public partial class MainWindow : Window
 
     private async Task MoveNoteToTrashAsync()
     {
+        var selectedAttachment = NotesList.SelectedItems?.OfType<NoteItem>()
+            .FirstOrDefault(note => note.IsAttachment);
+        if (selectedAttachment is not null)
+        {
+            if (!await ShowConfirmationAsync(this, T("Delete attachment"),
+                    T("Delete this attachment permanently? Links to it in notes will stop working.")))
+                return;
+            try
+            {
+                _vault.DeleteAttachment(selectedAttachment.RelativePath);
+                RefreshNotes();
+                StatusLabel.Text = T("Ready");
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+            {
+                StatusLabel.Text = T("Could not delete the attachment.");
+            }
+            return;
+        }
+
         if (_currentPath.Length == 0 ||
             !await ShowConfirmationAsync(this, T("Delete note?"), T("Move this note to the trash?")))
             return;
@@ -706,13 +887,16 @@ public partial class MainWindow : Window
             return;
         var selection = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
-            Title = T("Open notes folder"),
+            Title = T("Choose notes location"),
             AllowMultiple = false
         });
         if (selection.Count == 0)
             return;
+        if (_legacyMigrationPending)
+            MigrateLegacyVault(selection[0].Path.LocalPath);
         _unlockedFolders.Clear();
         _vaultPath = selection[0].Path.LocalPath;
+        _customVaultPath = !PathsEqual(_vaultPath, Path.Combine(AppContext.BaseDirectory, "Notes"));
         Directory.CreateDirectory(_vaultPath);
         _vault = new VaultService(_vaultPath);
         VaultPathLabel.Text = _vaultPath;
@@ -723,6 +907,13 @@ public partial class MainWindow : Window
         RefreshNotes();
         SetupWatcher();
         SaveSettings();
+    }
+
+    private void MigrateLegacyVault(string destination)
+    {
+        _legacyMigrationPending = false;
+        if (!TryMigrateVault(_legacyVaultPath, destination))
+            StatusLabel.Text = T("Could not copy notes from the previous default folder.");
     }
 
     private async Task OpenTrashAsync()
@@ -1106,8 +1297,11 @@ public partial class MainWindow : Window
             var linkPath = Path.GetRelativePath(noteDirectory, _vault.FullPath(relativeAttachment))
                 .Replace(Path.DirectorySeparatorChar, '/');
             var label = Path.GetFileName(relativeAttachment).Replace("]", "\\]");
+            var markdownLink = IsPreviewableImage(relativeAttachment)
+                ? $"![{label}](<{linkPath}>)"
+                : $"[{label}](<{linkPath}>)";
             Editor.Text = (Editor.Text ?? string.Empty).TrimEnd() +
-                          $"\n\n[{label}](<{linkPath}>)\n";
+                          $"\n\n{markdownLink}\n";
             RefreshNotes();
             StatusLabel.Text = T("Ready");
         }
@@ -1218,6 +1412,7 @@ public partial class MainWindow : Window
             _dirty = false;
             DirtyIndicator.IsVisible = false;
             Editor.IsEnabled = false;
+            UpdateEditorPlaceholder();
             TagsInput.IsEnabled = false;
             SaveButton.IsEnabled = false;
             EncryptButton.Content = T("Unlock note");
@@ -1683,12 +1878,25 @@ public partial class MainWindow : Window
     private sealed record LinkChoice(string Title, string RelativePath);
     private sealed record ExportRecord(string Path, string Title, string Content, List<string> Tags);
 
-    private void UpdatePreview() => PreviewText.Markdown = RenderPreview(Editor.Text ?? string.Empty);
+    private void UpdatePreview()
+    {
+        PreviewText.AssetPathRoot = _currentPath.Length == 0
+            ? _vaultPath
+            : Path.GetDirectoryName(_vault.FullPath(_currentPath));
+        PreviewText.Markdown = RenderPreview(Editor.Text ?? string.Empty);
+    }
+
+    private static bool IsPreviewableImage(string path) =>
+        Path.GetExtension(path).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp";
 
     private string RenderPreview(string markdown)
     {
-        return WikiLinkPattern().Replace(markdown, match =>
+        var rendered = WikiLinkPattern().Replace(markdown, match =>
             match.Groups[2].Success ? match.Groups[2].Value.Trim() : match.Groups[1].Value.Trim());
+        return MarkdownImageLinkPattern.Replace(rendered, match =>
+            IsPreviewableImage(match.Groups["path"].Value)
+                ? $"![{match.Groups["alt"].Value}](<{match.Groups["path"].Value}>)"
+                : match.Value);
     }
 
     private static string? ReadBootstrapLanguage()
@@ -1737,10 +1945,31 @@ public partial class MainWindow : Window
             .Equals(Path.GetFullPath(second).TrimEnd(Path.DirectorySeparatorChar), comparison);
     }
 
-    private static void TryMigrateVault(string source, string destination)
+    private static bool IsApplicationAdjacentVault(string path)
+    {
+        try
+        {
+            var fullPath = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar);
+            if (!Path.GetFileName(fullPath).Equals("Notes", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            var applicationDirectory = Path.GetDirectoryName(fullPath);
+            return applicationDirectory is not null &&
+                   (File.Exists(Path.Combine(applicationDirectory, "evidence.exe")) ||
+                    File.Exists(Path.Combine(applicationDirectory, "evidence")) ||
+                    File.Exists(Path.Combine(applicationDirectory, "evidence.dll")));
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryMigrateVault(string source, string destination)
     {
         if (!Directory.Exists(source) || PathsEqual(source, destination))
-            return;
+            return true;
         try
         {
             foreach (var directory in Directory.EnumerateDirectories(source, "*", SearchOption.AllDirectories))
@@ -1752,14 +1981,19 @@ public partial class MainWindow : Window
                 if (!File.Exists(target))
                     File.Copy(file, target);
             }
+            return true;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
+            return false;
         }
     }
 
     private static string SettingsPath() => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "evidence", "settings.json");
+
+    private static string VaultPathMetadataPath() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "evidence", "vault-path.txt");
 
     private void SaveSettings()
     {
@@ -1767,11 +2001,13 @@ public partial class MainWindow : Window
         {
             var path = SettingsPath();
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllText(path, JsonSerializer.Serialize(new UserSettings(_language, _vaultPath)),
+            File.WriteAllText(path, JsonSerializer.Serialize(new UserSettings(_language, _vaultPath, _customVaultPath)),
                 new UTF8Encoding(false));
+            File.WriteAllText(VaultPathMetadataPath(), _vaultPath, new UTF8Encoding(false));
         }
-        catch (IOException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
+            StatusLabel.Text = T("Could not save settings.");
         }
     }
 
@@ -1793,7 +2029,7 @@ public partial class MainWindow : Window
         Discard
     }
 
-    private sealed record UserSettings(string Language = "", string VaultPath = "");
+    private sealed record UserSettings(string Language = "", string VaultPath = "", bool? IsCustomVault = null);
     private sealed record TrashManifest(string OriginalPath, string StoredName, List<string>? Tags = null);
     private sealed record TrashEntry(string Directory, TrashManifest Manifest)
     {

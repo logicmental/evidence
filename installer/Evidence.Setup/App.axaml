@@ -1,0 +1,58 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shadui="clr-namespace:ShadUI;assembly=ShadUI"
+             x:Class="Evidence.Setup.App"
+             RequestedThemeVariant="Light">
+    <Application.Styles>
+        <shadui:ShadTheme />
+        <Style Selector="Window">
+            <Setter Property="Background" Value="#F5F5F7" />
+            <Setter Property="Foreground" Value="#1D1D1F" />
+        </Style>
+        <Style Selector="Button">
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="Foreground" Value="#1D1D1F" />
+            <Setter Property="BorderBrush" Value="#D8D8DE" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="9" />
+            <Setter Property="Padding" Value="16,9" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+        <Style Selector="Button:pointerover">
+            <Setter Property="Background" Value="#F3F3F6" />
+            <Setter Property="BorderBrush" Value="#C8C8CE" />
+        </Style>
+        <Style Selector="Button.primary">
+            <Setter Property="Background" Value="#007AFF" />
+            <Setter Property="Foreground" Value="#FFFFFF" />
+            <Setter Property="BorderBrush" Value="#0071EB" />
+        </Style>
+        <Style Selector="Button.primary:pointerover">
+            <Setter Property="Background" Value="#1685FF" />
+            <Setter Property="BorderBrush" Value="#1685FF" />
+        </Style>
+        <Style Selector="TextBox">
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="Foreground" Value="#1D1D1F" />
+            <Setter Property="BorderBrush" Value="#D8D8DE" />
+            <Setter Property="CornerRadius" Value="9" />
+            <Setter Property="Padding" Value="12,10" />
+        </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="Foreground" Value="#1D1D1F" />
+            <Setter Property="BorderBrush" Value="#D8D8DE" />
+            <Setter Property="CornerRadius" Value="9" />
+            <Setter Property="Padding" Value="10,7" />
+        </Style>
+        <Style Selector="CheckBox">
+            <Setter Property="Foreground" Value="#424245" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="BorderBrush" Value="#E5E5EA" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+    </Application.Styles>
+</Application>

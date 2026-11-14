@@ -179,6 +179,21 @@ internal sealed class VaultService
         return Relative(destination);
     }
 
+    public void DeleteAttachment(string relativePath)
+    {
+        var fullPath = FullPath(relativePath);
+        var attachmentsRoot = Path.GetFullPath(Path.Combine(_root, "attachments"));
+        var attachmentRelativePath = Path.GetRelativePath(attachmentsRoot, fullPath);
+        if (Path.IsPathRooted(attachmentRelativePath) || attachmentRelativePath == ".." ||
+            attachmentRelativePath.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) ||
+            attachmentRelativePath.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
+            throw new ArgumentException("Only files inside the attachments folder can be deleted.", nameof(relativePath));
+        if (!File.Exists(fullPath))
+            throw new FileNotFoundException("The attachment does not exist.", fullPath);
+
+        File.Delete(fullPath);
+    }
+
     public void SetTags(string relativePath, IEnumerable<string> tags)
     {
         var cleanTags = tags.Select(tag => tag.Trim()).Where(tag => tag.Length > 0)

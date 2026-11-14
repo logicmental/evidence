@@ -5,4 +5,5 @@ public sealed record NoteItem(
 	string Title,
 	bool IsEncrypted = false,
 	bool IsAttachment = false,
-	string TagsDisplay = "");
+	string TagsDisplay = "",
+	string KindDisplay = "");

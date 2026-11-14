@@ -1,0 +1,89 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Evidence.Setup.MainWindow"
+        Title="Install evidence"
+        Width="720" Height="560"
+        MinWidth="660" MinHeight="540"
+        WindowStartupLocation="CenterScreen"
+        Background="#F5F5F7">
+    <Grid RowDefinitions="72,*,76">
+        <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E5E5EA" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="Auto,*" Margin="30,0">
+                <Border Width="38" Height="38" CornerRadius="19" Background="#2AABEE"
+                        VerticalAlignment="Center">
+                    <Grid Width="24" Height="24">
+                        <Ellipse Width="14" Height="14" Margin="2"
+                                 HorizontalAlignment="Left" VerticalAlignment="Top"
+                                 Stroke="White" StrokeThickness="2.5" />
+                        <Line StartPoint="13,13" EndPoint="21,21"
+                              Stroke="White" StrokeThickness="2.5" StrokeLineCap="Round" />
+                    </Grid>
+                </Border>
+                <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center" Spacing="1">
+                    <TextBlock Text="evidence" FontSize="16" FontWeight="SemiBold" Foreground="#1D1D1F" />
+                    <TextBlock x:Name="HeaderSubtitle" Text="INSTALLER" FontSize="10"
+                               FontWeight="Bold" Foreground="#86868B" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="42,28,42,24" Spacing="18">
+                <StackPanel Spacing="7">
+                    <TextBlock x:Name="Heading" Text="Install evidence" FontSize="29"
+                               FontWeight="SemiBold" Foreground="#1D1D1F" />
+                    <TextBlock x:Name="Description" Text="A calm, private home for your notes."
+                               FontSize="14" Foreground="#6E6E73" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <Border Classes="card" CornerRadius="12" Padding="18">
+                    <StackPanel Spacing="10">
+                        <TextBlock x:Name="LocationLabel" Text="Install location"
+                                   FontSize="13" FontWeight="SemiBold" Foreground="#424245" />
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                            <TextBox x:Name="InstallDirectoryBox" MinHeight="40"
+                                     VerticalContentAlignment="Center" />
+                            <Button x:Name="BrowseButton" Grid.Column="1" Content="Browse..." />
+                        </Grid>
+                        <TextBlock x:Name="LocationHint"
+                                   Text="The app and its bundled tools will be installed here."
+                                   FontSize="11" Foreground="#86868B" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="18">
+                    <StackPanel Spacing="8">
+                        <TextBlock x:Name="LanguageLabel" Text="Interface language"
+                                   FontSize="12" FontWeight="SemiBold" Foreground="#424245" />
+                        <ComboBox x:Name="LanguageSelector" SelectedIndex="0">
+                            <ComboBoxItem Content="English" Tag="en" />
+                            <ComboBoxItem Content="Русский" Tag="ru" />
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Spacing="12" VerticalAlignment="Center">
+                        <CheckBox x:Name="DesktopShortcutCheckBox" IsChecked="True" />
+                        <CheckBox x:Name="LaunchWhenFinishedCheckBox" IsChecked="True" />
+                    </StackPanel>
+                </Grid>
+
+                <StackPanel x:Name="ProgressPanel" IsVisible="False" Spacing="8">
+                    <ProgressBar IsIndeterminate="True" Height="4" />
+                </StackPanel>
+                <TextBlock x:Name="StatusText" Text="" FontSize="12" Foreground="#6E6E73"
+                           TextWrapping="Wrap" MinHeight="18" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E5E5EA" BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="*,Auto,Auto" Margin="30,0" ColumnSpacing="10">
+                <TextBlock x:Name="FooterHint" Text="No account or internet connection required."
+                           FontSize="11" Foreground="#86868B" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" />
+                <Button x:Name="CancelButton" Grid.Column="1" Content="Cancel"
+                        VerticalAlignment="Center" />
+                <Button x:Name="InstallButton" Grid.Column="2" Classes="primary" Content="Install"
+                        MinWidth="112" VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

@@ -87,7 +87,41 @@ Copy-Item $pandocExe (Join-Path $toolsDir "pandoc.exe") -Force
 New-Item -ItemType Directory -Force -Path $bundledLibreOffice | Out-Null
 Copy-Item (Join-Path $libreOfficeRoot "*") $bundledLibreOffice -Recurse -Force
 
-& $isccPath "/DAppVersion=$Version" (Join-Path $PSScriptRoot "evidence.iss")
-if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed." }
+$setupProjectPath = Join-Path $PSScriptRoot "Evidence.Setup\Evidence.Setup.csproj"
+if (-not (Test-Path $setupProjectPath)) {
+    throw "Avalonia installer project not found: $setupProjectPath"
+}
 
-Write-Host "Installer created in $distDir"
+$stagingDir = Join-Path ([System.IO.Path]::GetTempPath()) "evidence-setup-$([guid]::NewGuid().ToString('N'))"
+$coreDir = Join-Path $stagingDir "core"
+$shellDir = Join-Path $stagingDir "shell"
+New-Item -ItemType Directory -Force -Path $coreDir | Out-Null
+try {
+    & $isccPath "/DAppVersion=$Version" "/O$coreDir" (Join-Path $PSScriptRoot "evidence.iss")
+    if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed." }
+
+    $coreInstallerPath = Join-Path $coreDir "evidence-install-core-$Version-windows-x64.exe"
+    if (-not (Test-Path $coreInstallerPath)) {
+        throw "Inno Setup package was not created: $coreInstallerPath"
+    }
+
+    & dotnet publish $setupProjectPath --configuration $Configuration --runtime win-x64 --self-contained true `
+        -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+        "-p:CoreInstallerPath=$coreInstallerPath" --output $shellDir
+    if ($LASTEXITCODE -ne 0) { throw "Avalonia installer publish failed." }
+
+    $shellExe = Join-Path $shellDir "evidence-setup.exe"
+    if (-not (Test-Path $shellExe)) {
+        throw "Avalonia installer executable was not created: $shellExe"
+    }
+
+    $installerPath = Join-Path $distDir "evidence-setup-$Version-windows-x64.exe"
+    Copy-Item $shellExe $installerPath -Force
+}
+finally {
+    if (Test-Path $stagingDir) {
+        Remove-Item -LiteralPath $stagingDir -Recurse -Force
+    }
+}
+
+Write-Host "Avalonia installer created: $installerPath"
